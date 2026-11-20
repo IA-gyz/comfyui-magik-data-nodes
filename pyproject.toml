@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-magik-data-nodes"
-version = "1.0.0"
+version = "1.1.0"
 description = 'Magik Data Nodes'
 authors = [{name = "IA-gyz"}]
 license = {text = "MIT"}

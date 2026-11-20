@@ -1,4 +1,5 @@
-"""Dependency-free consolidated ComfyUI data nodes. No expression evaluation."""
+"""Dependency-free consolidated ComfyUI data nodes. No expression evaluation.
+Since 1.1.0 this pack also absorbs comfyui-magik-basic-nodes (see extra_nodes.py)."""
 import math
 import operator
 import re
@@ -13,6 +14,22 @@ class AnyType(str):
 ANY = AnyType('*')
 RELATIONS = {'==': operator.eq, '!=': operator.ne, '<': operator.lt,
              '<=': operator.le, '>': operator.gt, '>=': operator.ge}
+TEXT_RELATIONS = ('contains', 'starts with', 'ends with')
+
+
+def numeric_compare(a, b, relation, tolerance):
+    """Compare numbers with an absolute tolerance: values within tolerance
+    count as equal, including for inclusive relations; strict relations
+    exclude them (replaces Magik Basic Nodes' Magik Compare Number mode)."""
+    a, b = number(a), number(b)
+    tolerance = number(tolerance or 0.0)
+    if tolerance < 0:
+        raise ValueError('Tolerance must be nonnegative.')
+    if tolerance == 0:
+        return RELATIONS[relation](a, b)
+    equal = abs(a - b) <= tolerance
+    return {'==': equal, '!=': not equal, '<': a < b and not equal,
+            '<=': a < b or equal, '>': a > b and not equal, '>=': a > b or equal}[relation]
 
 
 def truth(value):
@@ -60,8 +77,8 @@ class Base:
 
 class MagikBoolean(Base):
     DESCRIPTION = 'Boolean logic. Strict mode requires booleans; generic mode uses Python truthiness. Extra item sockets participate in AND/OR/XOR and inverted variants.'
-    RETURN_TYPES = ('BOOLEAN', 'BOOLEAN')
-    RETURN_NAMES = ('result', 'inverse')
+    RETURN_TYPES = ('BOOLEAN', 'BOOLEAN', 'INT', 'STRING')
+    RETURN_NAMES = ('result', 'inverse', 'int', 'string')
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -87,70 +104,105 @@ class MagikBoolean(Base):
         elif operation in ('NOT', 'VALUE'): result = vals[0]
         else: raise ValueError(f'Unknown Boolean operation: {operation}')
         if operation in ('NOT', 'NAND', 'NOR', 'XNOR'): result = not result
-        return result, not result
+        # int and string outputs replace Magik Basic Nodes' boolean emitter.
+        return result, not result, int(result), 'true' if result else 'false'
 
     def check_lazy_status(self, operation, **kwargs):
         return [k for k, v in kwargs.items() if k.startswith('item_') and v is None] if operation not in ('NOT', 'VALUE') else []
 
 
 class MagikCompare(Base):
-    DESCRIPTION = 'Compare values, strings, container length or numeric range. Range boundaries are individually inclusive/exclusive. Length without len() returns False and -1.'
+    DESCRIPTION = 'Compare values, strings, container length or numeric range. Range boundaries are individually inclusive/exclusive. Length without len() returns False and -1. Values mode with a numeric pair and a tolerance counts numbers within tolerance as equal; String mode adds contains/starts with/ends with (from Magik Basic Nodes).'
     RETURN_TYPES = ('BOOLEAN', 'BOOLEAN', 'INT')
     RETURN_NAMES = ('result', 'inverse', 'actual_length')
 
     @classmethod
     def INPUT_TYPES(cls):
         return {'required': {'mode': (['Values', 'String', 'Length', 'Is null', 'In range'],),
-                             'relation': (list(RELATIONS),),
+                             'relation': (list(RELATIONS) + list(TEXT_RELATIONS),),
                              'text_a': ('STRING', {'default': ''}), 'text_b': ('STRING', {'default': ''}),
                              'case_sensitive': ('BOOLEAN', {'default': True}),
                              'length': ('INT', {'default': 0, 'min': 0}),
                              'minimum': ('FLOAT', {'default': 0.0}), 'maximum': ('FLOAT', {'default': 100.0}),
-                             'include_min': ('BOOLEAN', {'default': True}), 'include_max': ('BOOLEAN', {'default': True})},
+                             'include_min': ('BOOLEAN', {'default': True}), 'include_max': ('BOOLEAN', {'default': True}),
+                             'tolerance': ('FLOAT', {'default': 0.0})},
                 'optional': {'a': (ANY,), 'b': (ANY,)}}
 
     def execute(self, mode='Values', relation='==', text_a='', text_b='', case_sensitive=True,
-                length=0, minimum=0.0, maximum=100.0, include_min=True, include_max=True, a=None, b=None):
+                length=0, minimum=0.0, maximum=100.0, include_min=True, include_max=True,
+                tolerance=0.0, a=None, b=None):
         actual = -1
-        if mode == 'Is null': result = a is None
+        if relation not in RELATIONS and relation not in TEXT_RELATIONS: raise ValueError(f'Unknown relation: {relation}')
+        if mode == 'Is null':
+            if relation in TEXT_RELATIONS: raise ValueError(f'{relation} is only available in String mode.')
+            result = a is None
         elif mode == 'In range':
+            if relation in TEXT_RELATIONS: raise ValueError(f'{relation} is only available in String mode.')
             a, low, high = number(a), number(minimum), number(maximum)
             if low > high: raise ValueError('Minimum cannot exceed maximum.')
             result = (a >= low if include_min else a > low) and (a <= high if include_max else a < high)
         elif mode == 'Length':
+            if relation in TEXT_RELATIONS: raise ValueError(f'{relation} is only available in String mode.')
             try: actual = len(a)
             except TypeError: return False, True, -1
             result = RELATIONS[relation](actual, length)
         elif mode == 'String':
+            if relation not in RELATIONS and relation not in TEXT_RELATIONS: raise ValueError(f'Unknown relation: {relation}')
             left, right = text_a if a is None else a, text_b if b is None else b
             if not isinstance(left, str) or not isinstance(right, str): raise TypeError('String comparison requires strings.')
             if not case_sensitive: left, right = left.casefold(), right.casefold()
-            result = RELATIONS[relation](left, right)
-        elif mode == 'Values': result = RELATIONS[relation](a, b)
+            if relation == 'contains': result = right in left
+            elif relation == 'starts with': result = left.startswith(right)
+            elif relation == 'ends with': result = left.endswith(right)
+            else: result = RELATIONS[relation](left, right)
+        elif mode == 'Values':
+            if relation in TEXT_RELATIONS: raise ValueError(f'{relation} is only available in String mode.')
+            numbers = a is not None and b is not None and all(
+                isinstance(v, (Real, str)) and not isinstance(v, bool) for v in (a, b))
+            result = numeric_compare(a, b, relation, tolerance) if numbers else RELATIONS[relation](a, b)
         else: raise ValueError(f'Unknown comparison mode: {mode}')
         result = truth(result)
         return result, not result, actual
 
 
 class MagikMaths(Base):
-    DESCRIPTION = 'Basic arithmetic. Connected a/b override numeric widgets. result preserves INT where possible; FLOAT and INT outputs explicitly convert (INT truncates toward zero). Safe divide alone returns fallback on zero.'
+    DESCRIPTION = 'Basic arithmetic plus clamp/map-range (ported from Magik Basic Nodes). Connected a/b override numeric widgets. result preserves INT where possible; FLOAT and INT outputs explicitly convert (INT truncates toward zero). Safe divide alone returns fallback on zero.'
     RETURN_TYPES = (ANY, 'FLOAT', 'INT')
     RETURN_NAMES = ('result', 'float', 'int')
-    OPS = ['add', 'subtract', 'multiply', 'divide', 'divide (zero safe)', 'floor divide', 'modulus', 'power', 'round']
+    OPS = ['add', 'subtract', 'multiply', 'divide', 'divide (zero safe)', 'floor divide', 'modulus', 'power', 'round', 'average', 'clamp', 'map range', 'negate']
 
     @classmethod
     def INPUT_TYPES(cls):
         return {'required': {'operation': (cls.OPS,), 'a_value': ('FLOAT', {'default': 0.0}),
                              'b_value': ('FLOAT', {'default': 1.0}),
                              'digits': ('INT', {'default': 0, 'min': -308, 'max': 308}),
-                             'zero_fallback': ('FLOAT', {'default': 0.0})},
+                             'zero_fallback': ('FLOAT', {'default': 0.0}),
+                             'minimum': ('FLOAT', {'default': 0.0}), 'maximum': ('FLOAT', {'default': 1.0}),
+                             'output_minimum': ('FLOAT', {'default': 0.0}), 'output_maximum': ('FLOAT', {'default': 100.0}),
+                             'clamp_mapping': ('BOOLEAN', {'default': True})},
                 'optional': {'a': (ANY,), 'b': (ANY,)}}
 
-    def execute(self, operation, a_value=0.0, b_value=1.0, digits=0, zero_fallback=0.0, **kwargs):
+    def execute(self, operation, a_value=0.0, b_value=1.0, digits=0, zero_fallback=0.0,
+                minimum=0.0, maximum=1.0, output_minimum=0.0, output_maximum=100.0,
+                clamp_mapping=True, **kwargs):
         a = number(kwargs.get('a', a_value))
         if operation == 'round': return numeric_outputs(round(a, digits))
-        b = number(kwargs.get('b', b_value))
-        if operation == 'divide (zero safe)': result = number(zero_fallback) if b == 0 else a / b
+        if operation == 'negate': return numeric_outputs(-a)
+        if operation not in ('average', 'clamp', 'map range'):
+            b = number(kwargs.get('b', b_value))
+        if operation == 'average':
+            b = number(kwargs.get('b', b_value))
+            result = a / 2 + b / 2
+        elif operation == 'clamp':
+            low, high = sorted((number(minimum), number(maximum)))
+            result = max(low, min(high, a))
+        elif operation == 'map range':
+            low, high = number(minimum), number(maximum)
+            if low == high: raise ValueError('Map range requires different input bounds.')
+            ratio = (a - low) / (high - low)
+            if clamp_mapping: ratio = max(0.0, min(1.0, ratio))
+            result = number(output_minimum) + ratio * (number(output_maximum) - number(output_minimum))
+        elif operation == 'divide (zero safe)': result = number(zero_fallback) if b == 0 else a / b
         else:
             ops = {'add': operator.add, 'subtract': operator.sub, 'multiply': operator.mul,
                    'divide': operator.truediv, 'floor divide': operator.floordiv, 'modulus': operator.mod, 'power': operator.pow}

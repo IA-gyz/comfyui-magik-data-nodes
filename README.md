@@ -1,15 +1,22 @@
-# Magik Data Nodes — 0.1.0
+# Magik Data Nodes — 1.1.0
 
-Five consolidated ComfyUI custom nodes, implemented independently with Python's
+Nine consolidated ComfyUI custom nodes, implemented independently with Python's
 standard library. No pip packages, original pack, network access or expression eval required.
+
+As of 1.1.0 this pack absorbs the deprecated comfyui-magik-basic-nodes: the four
+unique basic nodes are included unchanged, and the unique features of basic's
+overlapping nodes have been folded into their consolidated counterparts. Remove
+the old basic pack before installing: both registered colliding node IDs
+(`MagikBoolean`, `MagikCompare`).
 
 ## Install
 
 Extract `magik_data_nodes` into `~/Apps/comfyui/custom_nodes/`, restart ComfyUI,
-then refresh the browser. Find the nodes under **Magik / Data**.
+then refresh the browser. Find the nodes under **Magik / Data**
+(Convert, Math and Inspect subcategories for the ported utilities).
 Keep this folder as a standalone custom node pack. Existing Magik nodes with the
 same registration IDs must be removed or renamed before installation to avoid
-registration collisions. This pack does not replace nodes in existing workflows.
+registration collisions.
 
 ## Nodes
 
@@ -23,14 +30,20 @@ raises an actionable error rather than silently reducing the input.
 
 Add/remove operand buttons provide up to 128 extra inputs. AND/OR and inverted
 variants combine all operands. XOR uses odd parity; XNOR uses even parity.
-NOT and VALUE use only A. Outputs: result and inverse.
+NOT and VALUE use only A. Outputs: result, inverse, int (0/1) and string
+(false/true). The int/string outputs replace Magik Basic Nodes' boolean emitter;
+this fully supersedes basic's Magik Logic as well.
 
 ### Magik Compare
 
-Modes: Values, String, Length, Is null, In range. Six comparison relations:
-`==`, `!=`, `<`, `<=`, `>`, `>=`.
+Modes: Values, String, Length, Is null, In range. Relations `==`, `!=`, `<`,
+`<=`, `>`, `>=`, plus `contains`, `starts with` and `ends with` (String mode only,
+ported from Magik Basic Nodes).
 
 - Values uses Python structural equality/order; incompatible types raise errors.
+  When both sides are numeric and a tolerance greater than zero is set, numbers
+  within the tolerance count as equal: inclusive relations include them and
+  strict relations exclude them (replaces basic's Number mode).
 - String uses text widgets, optionally overridden by connected A/B strings.
   Case-insensitive comparison uses Unicode casefolding.
 - Length compares `len(a)` against the length widget. A value with no length
@@ -76,10 +89,16 @@ lists; the selector and condition controls use their first mapped value.
 ### Magik Maths
 
 add, subtract, multiply, divide, divide (zero safe), floor divide, modulus,
-power and round. Connected A/B override a_value/b_value. Numeric strings are
+power, round, plus average, negate, clamp and map range (ported from
+Magik Basic Nodes). Connected A/B override a_value/b_value. Numeric strings are
 accepted; booleans and nonfinite values are rejected. Round uses Python's
 round-to-even rule with the digits widget. Safe division uses zero_fallback
 only when B is zero. Ordinary divide raises on zero.
+
+Clamp uses minimum/maximum and accepts reversed bounds. Map range maps A from
+minimum…maximum to output_minimum…output_maximum, supports descending ranges,
+and optionally clamps to the input range; equal input bounds raise an error.
+Other operations ignore the range widgets.
 
 Outputs: result (preserves integer arithmetic), FLOAT and INT. INT truncates
 toward zero; integer precision is preserved on result (FLOAT can lose precision).
@@ -100,6 +119,48 @@ tangent rejects angles where abs(cos(angle)) < 1e-10.
 
 Outputs: result, FLOAT and INT (truncates toward zero).
 
+### Magik Type Convert
+
+Convert any scalar to String, Integer, Float or Boolean (Magik/Data/Convert).
+The converted socket is wildcard so it can connect to the selected target type:
+choose a target matching the receiving input.
+
+Integer rounding: Truncate (toward zero), Round (ties to even), Floor, Ceil.
+Exact integer strings preserve precision. String conversion accepts scalars and
+None; padding applies to integer inputs, includes the sign, and never truncates.
+Boolean text explicitly parses true/false, yes/no, on/off, 1/0, or empty; numeric
+zero is false and other finite numbers are true. Booleans convert to 1.0/0.0
+for Float. Invalid conversions stop with an error. These are scalar utilities;
+use Magik Show Any to inspect tensors and objects.
+
+### Magik Float
+
+Editable float with 0.01 arrow increments (Magik/Data/Math). Precision (0–12)
+rounds the FLOAT output and formats the STRING output with fixed decimal places.
+Python ties-to-even rounding applies. Controls persist through normal workflow
+serialization.
+
+### Magik Length
+
+Auto: text → line count; dictionary → entries; IMAGE tensor → batch count;
+Python containers/ComfyUI execution lists → element count (Magik/Data/Inspect).
+Auto never opens files. Select Text file lines to read a local UTF-8/UTF-16/Latin-1
+file by path; files are streamed. Paths refer to the ComfyUI server machine.
+Supports character counts and optional exclusion of blank/whitespace-only lines.
+Empty text is 0 lines; a final newline terminates the last line without adding
+an extra line. File mode follows standard text-file newline conventions (LF,
+CRLF, CR). Text lines additionally recognizes Python splitlines Unicode
+separators. Characters are Unicode code points. ComfyUI list mapping is disabled
+on this node so it counts complete execution lists.
+
+### Magik Image Info
+
+Passes IMAGE through unchanged and outputs width, height, batch count, channels,
+numeric width/height ratio, reduced ratio text, megapixels per image, and a
+summary including dtype/device (Magik/Data/Inspect). Reads tensor metadata
+only, without pixel conversion or GPU synchronization. Expects the standard
+ComfyUI IMAGE layout [batch, height, width, channels].
+
 ## Validation
 
 Run from the pack folder:
@@ -109,9 +170,10 @@ python -m unittest discover -s tests -v
 node tests/test_frontend.mjs
 ```
 
-Tests cover truth tables, generic/strict typing, comparison boundaries and
-Unicode, arithmetic and all 20 functions, lazy branch requests, blockers,
-connection detection, list-level execution, dependency ordering, registration,
-and frontend socket creation/restoration. ComfyUI's blocker is stubbed for
-standalone tests; a live ComfyUI/browser integration test is still required on
-your installation. No automatic workflow migration is included.
+Tests cover truth tables, generic/strict typing, comparison boundaries,
+tolerance and text relations, arithmetic and all 20 functions, the ported
+clamp/map-range operations, lazy branch requests, blockers, connection
+detection, list-level execution, dependency ordering, the four ported nodes,
+registration (9 nodes), and frontend socket creation/restoration. ComfyUI's
+blocker is stubbed for standalone tests; a live ComfyUI/browser integration test
+is still required on your installation.
