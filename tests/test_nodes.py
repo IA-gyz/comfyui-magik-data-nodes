@@ -11,6 +11,7 @@ pkg.__path__ = [str(pack_dir)]
 sys.modules['magik_data_pack'] = pkg
 m = importlib.import_module('magik_data_pack.nodes')
 e = importlib.import_module('magik_data_pack.extra_nodes')
+l = importlib.import_module('magik_data_pack.integer_loop')
 
 class Blocker:
     def __init__(self, message): self.message = message
@@ -152,10 +153,20 @@ class Tests(unittest.TestCase):
         self.assertEqual(result[1:5], (6, 4, 2, 3))
         self.assertAlmostEqual(result[5], 1.5)
 
+    def test_integer_loop(self):
+        n = l.IntegerLoop()
+        self.assertEqual(n.execute(50, 0, 100, True), (50,))
+        self.assertEqual(n.execute(500, 0, 100, True), (100,))
+        self.assertEqual(n.execute(-5, 0, 100, True), (0,))
+        self.assertEqual(n.execute(5, 100, 0, True), (5,))  # reversed bounds are swapped
+        self.assertEqual(n.INPUT_TYPES()['required']['Control after Generate'][0], ['Fixed', 'Increment', 'Decrement', 'Randomize'])
+        self.assertEqual(l.NODE_DISPLAY_NAME_MAPPINGS['IntegerLoop'], 'Magik Integer Loop')
+
     def test_registration_and_dynamic_schema(self):
         self.assertEqual(set(m.NODE_CLASS_MAPPINGS), {'MagikBoolean', 'MagikCompare', 'MagikControlFlow', 'MagikMaths', 'MagikMathConstFunctions'})
         self.assertEqual(set(e.NODE_CLASS_MAPPINGS), {'MagikTypeConvert', 'MagikFloat', 'MagikLength', 'MagikImageInfo'})
-        for cls in list(m.NODE_CLASS_MAPPINGS.values()) + list(e.NODE_CLASS_MAPPINGS.values()):
+        self.assertEqual(set(l.NODE_CLASS_MAPPINGS), {'IntegerLoop'})
+        for cls in list(m.NODE_CLASS_MAPPINGS.values()) + list(e.NODE_CLASS_MAPPINGS.values()) + list(l.NODE_CLASS_MAPPINGS.values()):
             self.assertEqual(len(cls.RETURN_TYPES), len(cls.RETURN_NAMES))
             cls.INPUT_TYPES()
         schema = m.MagikControlFlow.INPUT_TYPES()['optional']

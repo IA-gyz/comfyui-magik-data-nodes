@@ -1,13 +1,16 @@
-# Magik Data Nodes — 1.1.0
+# Magik Data Nodes — 1.2.0
 
-Nine consolidated ComfyUI custom nodes, implemented independently with Python's
+Ten consolidated ComfyUI custom nodes, implemented independently with Python's
 standard library. No pip packages, original pack, network access or expression eval required.
 
-As of 1.1.0 this pack absorbs the deprecated comfyui-magik-basic-nodes: the four
+As of 1.1.0 this pack absorbs the deprecated comfyui-magik-basic-nodes
+and as of 1.2.0 the deprecated comfyui-magik-integer-loop. As before: the four
+As before: the four
 unique basic nodes are included unchanged, and the unique features of basic's
 overlapping nodes have been folded into their consolidated counterparts. Remove
-the old basic pack before installing: both registered colliding node IDs
-(`MagikBoolean`, `MagikCompare`).
+the old basic and integer-loop packs before installing: basic registered
+colliding node IDs (`MagikBoolean`, `MagikCompare`), and both packs would register
+`IntegerLoop` twice.
 
 ## Install
 
@@ -177,3 +180,14 @@ detection, list-level execution, dependency ordering, the four ported nodes,
 registration (9 nodes), and frontend socket creation/restoration. ComfyUI's
 blocker is stubbed for standalone tests; a live ComfyUI/browser integration test
 is still required on your installation.
+
+
+### Magik Integer Loop
+
+Editable integer widget, clamped to Min/Max on every execution; reversed
+bounds are swapped. **Control after Generate** is handled by the frontend
+(web/integer_loop.js): between queued prompts the Output widget shows Fixed,
+Increment, Decrement or Randomize within the bounds; Loop wraps at the bounds
+instead of pinning. The queued prompt keeps the value it was serialized with.
+Works like a KSampler seed control for any integer input. Node ID is
+`IntegerLoop` (kept from the original pack so the frontend keeps matching).
